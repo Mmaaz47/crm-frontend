@@ -179,7 +179,7 @@ const AppLayout: React.FC = () => {
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Clock />
             <Typography variant="body1" sx={{ display: { xs: 'none', sm: 'block' }, mr: 1 }}>
-              {user?.firstName ? `Hi, ${user.firstName}` : user?.email}
+              {user?.firstName ? `Hello, ${user.firstName}` : user?.email}
             </Typography>
             
             <Button 
