@@ -40,6 +40,7 @@ import {
 } from '@mui/icons-material';
 import { contactService } from '../../services/contact.service';
 import { ContactCategory } from '../../types';
+import { removeDuplicateContacts, buildCsv, downloadCsv } from '../../utils/csv';
 
 interface ContactBulkImportProps {
   onImportComplete: (result: { imported: number; failed: number }) => void;
@@ -61,6 +62,9 @@ const ContactBulkImport: React.FC<ContactBulkImportProps> = ({ onImportComplete 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
   const [defaultCategory, setDefaultCategory] = useState<ContactCategory>('STANDARD');
+  const [duplicatesRemoved, setDuplicatesRemoved] = useState(0);
+  const [originalData, setOriginalData] = useState<any[]>([]);
+  const [cleanedData, setCleanedData] = useState<any[]>([]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,6 +79,9 @@ const ContactBulkImport: React.FC<ContactBulkImportProps> = ({ onImportComplete 
     setSuccessMessage(null);
     setActiveStep(0);
     setUploading(false);
+    setDuplicatesRemoved(0);
+    setOriginalData([]);
+    setCleanedData([]);
   };
 
   const handleClose = () => {
@@ -111,8 +118,9 @@ const ContactBulkImport: React.FC<ContactBulkImportProps> = ({ onImportComplete 
         const lines = text.split('\n');
         const headers = lines[0].split(',');
         
-        const previewData = [];
-        for (let i = 1; i < Math.min(lines.length, 6); i++) {
+        // Parse all data first
+        const allData = [];
+        for (let i = 1; i < lines.length; i++) {
           if (lines[i].trim() === '') continue;
           
           const values = lines[i].split(',');
@@ -122,9 +130,21 @@ const ContactBulkImport: React.FC<ContactBulkImportProps> = ({ onImportComplete 
             row[header.trim()] = values[index]?.trim() || '';
           });
           
-          previewData.push(row);
+          allData.push(row);
         }
         
+        // Store original data
+        setOriginalData(allData);
+        
+        // Remove duplicates based on phone number
+        const deduplicationResult = removeDuplicateContacts(allData, 'phone');
+        
+        // Store cleaned data and statistics
+        setCleanedData(deduplicationResult.deduplicatedContacts);
+        setDuplicatesRemoved(deduplicationResult.duplicatesRemoved);
+        
+        // Set preview to show first 5 rows of cleaned data
+        const previewData = deduplicationResult.deduplicatedContacts.slice(0, 5);
         setPreview(previewData);
         setActiveStep(1);
       } catch (error) {
@@ -150,8 +170,13 @@ const ContactBulkImport: React.FC<ContactBulkImportProps> = ({ onImportComplete 
     setError(null);
     
     try {
-      // Send file and the selected default category to the API
-      const result = await contactService.importContacts(file, defaultCategory);
+      // Create a new file with the cleaned data
+      const headers = cleanedData.length > 0 ? Object.keys(cleanedData[0]) : [];
+      const csv = buildCsv(cleanedData, headers);
+      const cleanedFile = new File([csv], file.name.replace(/\.[^/.]+$/, '_cleaned.csv'), { type: 'text/csv' });
+      
+      // Send cleaned file and the selected default category to the API
+      const result = await contactService.importContacts(cleanedFile, defaultCategory);
       
       setSuccessMessage(`Successfully imported ${result.imported} contacts${result.failed ? `, ${result.failed} skipped` : ''}!`);
       setActiveStep(2);
@@ -174,6 +199,15 @@ const ContactBulkImport: React.FC<ContactBulkImportProps> = ({ onImportComplete 
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadCleanedCsv = () => {
+    if (cleanedData.length === 0) return;
+    
+    // Get headers from the first row
+    const headers = Object.keys(cleanedData[0]);
+    const csv = buildCsv(cleanedData, headers);
+    downloadCsv(csv, 'cleaned_contacts.csv');
   };
   
   const handleNextStep = () => {
@@ -310,6 +344,23 @@ const ContactBulkImport: React.FC<ContactBulkImportProps> = ({ onImportComplete 
             <Typography variant="body1" paragraph>
               Review your data before importing. Below is a preview of the first 5 rows:
             </Typography>
+            
+            {duplicatesRemoved > 0 && (
+              <Alert severity="info" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  Duplicates removed: {duplicatesRemoved} contacts detected with the same phone number.
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<FileDownloadIcon />}
+                  onClick={handleDownloadCleanedCsv}
+                  sx={{ mt: 1 }}
+                >
+                  Download Cleaned CSV
+                </Button>
+              </Alert>
+            )}
             
             <TableContainer component={Paper} variant="outlined" sx={{ mb: 3 }}>
               <Table size="small">

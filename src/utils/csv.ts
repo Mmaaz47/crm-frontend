@@ -28,3 +28,67 @@ export function downloadCsv(csv: string, filename = 'contacts.csv') {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Normalizes a phone number by removing spaces, hyphens, parentheses, and the "+" sign
+ * @param phone - The phone number to normalize
+ * @returns The normalized phone number (digits only)
+ */
+export function normalizePhoneNumber(phone: string | null | undefined): string {
+  if (!phone || typeof phone !== 'string') {
+    return '';
+  }
+  
+  // Remove spaces, hyphens, parentheses, plus signs, and other non-digit characters
+  return phone.replace(/[\s\-\(\)\+\.]/g, '');
+}
+
+/**
+ * Removes duplicate contacts based on normalized phone numbers
+ * @param contacts - Array of contact objects
+ * @param phoneField - The field name containing the phone number (default: 'phone')
+ * @returns Object containing deduplicated contacts and removal statistics
+ */
+export function removeDuplicateContacts<T extends Record<string, any>>(
+  contacts: T[],
+  phoneField: string = 'phone'
+): {
+  deduplicatedContacts: T[];
+  duplicatesRemoved: number;
+  duplicatePhoneNumbers: string[];
+} {
+  const seenPhoneNumbers = new Set<string>();
+  const deduplicatedContacts: T[] = [];
+  const duplicatePhoneNumbers: string[] = [];
+  let duplicatesRemoved = 0;
+
+  for (const contact of contacts) {
+    const phone = contact[phoneField];
+    const normalizedPhone = normalizePhoneNumber(phone);
+    
+    // If phone is empty/null, keep the contact (treat as separate records)
+    if (!normalizedPhone) {
+      deduplicatedContacts.push(contact);
+      continue;
+    }
+    
+    // If we've seen this phone number before, skip this contact
+    if (seenPhoneNumbers.has(normalizedPhone)) {
+      duplicatesRemoved++;
+      if (!duplicatePhoneNumbers.includes(normalizedPhone)) {
+        duplicatePhoneNumbers.push(normalizedPhone);
+      }
+      continue;
+    }
+    
+    // First time seeing this phone number, keep the contact
+    seenPhoneNumbers.add(normalizedPhone);
+    deduplicatedContacts.push(contact);
+  }
+
+  return {
+    deduplicatedContacts,
+    duplicatesRemoved,
+    duplicatePhoneNumbers
+  };
+}
